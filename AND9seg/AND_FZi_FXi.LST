@@ -1,0 +1,453 @@
+A51 MACRO ASSEMBLER  AND_FZI_FXI                                                          07/07/2018 18:04:55 PAGE     1
+
+
+MACRO ASSEMBLER A51 V8.00b
+OBJECT MODULE PLACED IN AND_FZi_FXi.OBJ
+ASSEMBLER INVOKED BY: C:\Keil\C51\BIN\A51.EXE AND_FZi_FXi.asm SET(SMALL) DEBUG EP
+
+LOC  OBJ            LINE     SOURCE
+
+                       1     ; AnD for 7+2 display 12Mhz
+  FFF4                 2     BAUDNUM         equ -12d ;for 11.0592MHz xtal
+  REG                  3     POINTER         equ r0 ;RAM pointer at top of RAM
+  REG                  4     TEMPPTR         equ r1
+  REG                  5     COUNTER         equ r2 ;counter
+  REG                  6     TEMPCOUNTER     equ     r3
+  REG                  7     TEMP            equ r4
+  0009                 8     MAX             equ 09h ;| +| 0| 0| 0| 0| 0| .| 0| 0|  |  | g|
+  000F                 9     serialMAX       equ 0Fh
+  0030                10     serialRAM       equ 30h ;base address of RAM
+  0040                11     displayRAM      equ     40h
+  0020                12     FLAG            bit 20h
+  000A                13     MARKER          equ 0Ah ; Line Feed
+0000                  14     org 0000h
+0000 21AE             15             jmp main
+0002                  16     timer0:
+000B                  17     org 000Bh
+000B 31D6             18             acall displayfxn
+000D 32               19             reti
+000E                  20     serial:                                            
+0023                  21     org 0023H
+0023 1126             22             call updateRAM; OK
+0025 32               23             reti
+0026                  24     updateRAM: 
+0026 C0D0             25             push psw
+0028 C0E0             26             push 0e0h
+002A D2D3             27             setb rs0 ;BANK-3
+002C D2D4             28             setb rs1 ;BANK-3
+                      29             ;------fetch the received byte-------
+002E C298             30             clr ri
+0030 E599             31             mov a,sbuf
+0032 547F             32             anl a,#7fh ;ignore MSB, since MSB is pairity;7bit-UART
+                      33             ;------------------------------
+0034 B40A08           34             cjne a,#MARKER,PUSHinRAM 
+0037 D220             35                     setb FLAG
+0039 7A00             36                     mov COUNTER,#00h
+003B 7830             37                     mov POINTER,#serialRAM
+003D 8063             38                     jmp exit0
+                      39                     ;----------Fill the RAM-------------
+                      40                     ;|30|31|32|33|34|35|36|37|38|39|3A|3B|3C|3D|3E|3F |                        
+                                  
+                      41                     ;|S | T| ,| +| 0| 0| 0| 0| 0| .| 0| 0|  |  | g| CR|
+003F                  42                     PUSHinRAM:
+003F 302060           43                     jnb FLAG,exit0
+0042 F6               44                             mov @POINTER,a ;PUSHED
+0043 08               45                             inc POINTER
+0044 0A               46                             inc COUNTER
+                      47                     ;------entred in RAM--------exit serial----------
+0045 BA0F5A           48                     cjne COUNTER,#serialMAX,exit0
+                      49                     ;-----------all entries has been made in RAM--------------      
+0048 C220             50                                     clr             FLAG
+004A 900253           51                                     mov dptr,#digits                        
+004D 11A7             52                                     acall common
+004F AC3E             53                                     mov TEMP,3Eh    ;last letter g/C/%
+0051 E53D             54                                     mov a,3Dh               ;second last letter
+0053 2C               55                                     add a,TEMP
+0054 FC               56                                     mov TEMP,a
+                      57     
+A51 MACRO ASSEMBLER  AND_FZI_FXI                                                          07/07/2018 18:04:55 PAGE     2
+
+0055 BC8704           58                                     cjne TEMP,#87h, notgrams;ASCII '\b'+'g' = 0x87
+0058 11BA             59                                             call gram
+005A 8046             60                                             jmp exit0
+005C                  61                             notgrams:
+005C BC9304           62                                             cjne TEMP,#93h,notPCS ;pieces ASCII 'P'+'C'=93
+005F 11FB             63                                             call PCS
+0061 803F             64                                             jmp exit0
+0063                  65                             notPCS:
+0063 BC4504           66                                             cjne TEMP,#45h,notPERCENT
+0066 311D             67                                             call PERCENT
+0068 8038             68                                             jmp exit0
+006A                  69                             notPERCENT:
+006A BCE904           70                                             cjne    TEMP,#0E9h,notOZ
+006D 3142             71                                             call OZ
+006F 8031             72                                             jmp exit0
+0071                  73                             notOZ:
+0071 BCCE04           74                                             cjne TEMP,#0CEh,notLB
+0074 3167             75                                             call LB
+0076 802A             76                                             jmp exit0
+0078                  77                             notLB:
+0078 BCEE04           78                                             cjne TEMP,#0EEh,notZT
+007B 3142             79                                             call OZ ;ZT is same as OZ
+007D 8023             80                                             jmp exit0
+007F                  81                             notZT:
+007F BCD704           82                                             cjne TEMP,#0D7h,notCT
+0082 11BA             83                                             call gram;CT is same as gram
+0084 801C             84                                             jmp exit0
+0086                  85                             notCT:
+0086 BCDC04           86                                             cjne TEMP,#0dch,notOM
+0089 3142             87                                             call OZ;OM is same as OZ
+008B 8015             88                                             jmp exit0
+008D                  89                             notOM:
+008D BCEB04           90                                             cjne TEMP,#0ebh,notWT
+0090 11BA             91                                             call gram ;WT is same as gram
+0092 800E             92                                             jmp exit0
+0094                  93                             notWT:
+0094 BC9504           94                                             cjne TEMP,#95h,notGN 
+0097 318C             95                                             call GN
+0099 8007             96                                             jmp exit0
+009B                  97                             notGN:
+009B BCE004           98                                             cjne TEMP,#0E0h,notTL 
+009E 3167             99                                             call LB;TL is same as LB
+00A0 8000            100                                             jmp exit0
+00A2                 101                             notTL:
+00A2 D0E0            102                             exit0:  pop 0E0h
+00A4 D0D0            103                                             pop PSW
+00A6 22              104                                             ret
+00A7                 105             common:  
+                     106     ;|+ |36|37|38.|3A|3B|
+                     107     ;|45|44|43|42 |41|40|
+                     108                                     ;-----Sign digit-----------
+00A7 E533            109                                     mov a,33h
+                     110                                     ;mov 45h,#0ffh
+00A9 B42D00          111                                     cjne a,#'-',positive
+                     112                                     ;mov 45h,#0fbH
+00AC                 113                                     positive:;do nothing
+00AC 7934            114                                             MOV     TEMPPTR,#34h
+00AE 7B08            115                                             MOV     TEMPCOUNTER,#08h
+                     116                     ;Map ASCII digits to display digits
+00B0 E7              117                     mapping:        mov     a,@TEMPPTR
+00B1 C3              118                                             clr             C
+00B2 9430            119                                             subb    a,#'0'
+00B4 93              120                                             movc    a,@a+dptr ;dptr is defined in main
+00B5 F7              121                                             mov     @TEMPPTR,a
+00B6 09              122                                             inc     TEMPPTR
+00B7 DBF7            123                                             djnz    TEMPCOUNTER,mapping
+A51 MACRO ASSEMBLER  AND_FZI_FXI                                                          07/07/2018 18:04:55 PAGE     3
+
+00B9 22              124             RET;common
+                     125     
+00BA                 126                                     gram:
+00BA 754726          127                                                     mov             47h,#26h        ;Gra
+00BD 7548F2          128                                                     mov             48h,#0F2h       ;m
+00C0 754624          129                                                     mov     46h,#24h        ;forced zero
+00C3 E539            130                                             mov             A,39h
+                     131                                             ;   |  |0 |0 |0 |0 |.|0 |0 |0 |
+                     132                                             ;|+ |34|35|36|37|38|.|3A|3B|
+                     133                                             ;    |  |40|41|42 |43|44|45|46|
+00C5 B42E17          134                                             cjne    A,#'.',DECIMALPLACE3
+00C8 853B45          135                                                     mov             45h,3Bh
+00CB 853A44          136                                                     mov     44h,3Ah
+00CE 853843          137                                                     mov             43h,38h
+00D1 5343FB          138                                                     anl             43h,#0FBh       ;39 is deci
+                             mal;P0.2 -> h
+00D4 853742          139                                                     mov             42h,37h
+00D7 853641          140                                                     mov     41h,36h         ;2nd 7-seg from lef
+                             t
+00DA 853540          141                                                     mov     40h,35h
+00DD 8015            142                                                     JMP             EXITgram
+00DF                 143                                             DECIMALPLACE3:
+00DF 853A45          144                                                     mov             45h,3Ah
+00E2 853944          145                                                     mov     44h,39h
+00E5 5344FB          146                                                     anl             44h,#0FBh
+00E8 853743          147                                                     mov             43h,37h
+00EB 853642          148                                                     mov             42h,36h
+00EE 853541          149                                                     mov     41h,35h         ;2nd 7-seg from lef
+                             t
+00F1 853440          150                                                     mov     40h,34h
+00F4                 151                                             EXITgram:       
+00F4 7C04            152                                                     mov TEMP,#04h   ;mask 48h,47h,46h,45h if re
+                             quired
+00F6 7940            153                                                     mov TEMPPTR,#40h
+00F8 31A4            154                                                     call maskzeros
+00FA 22              155                                                     ret;gram                        
+00FB                 156                                     PCS:
+00FB 7547A1          157                                             mov             47h,#0A1h       ;P
+00FE 754827          158                                             mov             48h,#27h        ;C
+0101 853B46          159                                             mov     46h,3Bh
+0104 853A45          160                                             mov             45h,3Ah
+0107 853844          161                                             mov     44h,38h
+010A 853743          162                                             mov             43h,37h
+010D 853642          163                                             mov             42h,36h
+0110 853541          164                                             mov     41h,35h         ;2nd 7-seg from left
+0113 853440          165                                             mov     40h,34h
+0116 7C06            166                                             mov TEMP,#06h   ;mask 48h,47h,46h,45h if required
+0118 7940            167                                             mov TEMPPTR,#40h
+011A 31A4            168                                             call maskzeros
+011C 22              169                                     ret;PCS 
+011D                 170                                     PERCENT:
+011D 7547A1          171                                             mov             47h,#0A1h       ;P
+0120 7548F3          172                                             mov             48h,#0F3h       ;r
+0123 853B46          173                                             mov     46h,3Bh
+0126 853A45          174                                             mov             45h,3Ah
+0129 5345FB          175                                             anl             45h,#0FBh
+012C 853844          176                                             mov     44h,38h
+012F 853743          177                                             mov             43h,37h
+0132 853642          178                                             mov             42h,36h
+0135 853541          179                                             mov     41h,35h         ;2nd 7-seg from left
+0138 853440          180                                             mov     40h,34h
+013B 7C05            181                                             mov TEMP,#05h   ;mask 48h,47h,46h,45h if required
+013D 7940            182                                             mov TEMPPTR,#40h
+013F 31A4            183                                             call maskzeros
+0141 22              184                                     ret;PERCENT
+0142                 185                                     OZ:
+A51 MACRO ASSEMBLER  AND_FZI_FXI                                                          07/07/2018 18:04:55 PAGE     4
+
+0142 754726          186                                             mov             47h,#26h        ;o
+0145 7548F2          187                                             mov             48h,#0F2h       ;z
+0148 853B46          188                                             mov     46h,3Bh
+014B 853A45          189                                             mov             45h,3Ah
+014E 853844          190                                             mov     44h,38h
+0151 853743          191                                             mov             43h,37h
+0154 5343FB          192                                             anl             43h,#0FBh       ;39 is decimal;P0.2
+                              -> h
+0157 853642          193                                             mov             42h,36h
+015A 853541          194                                             mov     41h,35h         ;2nd 7-seg from left
+015D 853440          195                                             mov     40h,34h
+0160 7C03            196                                             mov TEMP,#03h   ;mask 48h,47h,46h,45h if required
+0162 7940            197                                             mov TEMPPTR,#40h
+0164 31A4            198                                             call maskzeros
+0166 22              199                                     ret;OZ
+0167                 200                                     LB:
+0167 754726          201                                             mov             47h,#26h        ;o
+016A 7548F2          202                                             mov             48h,#0F2h       ;z
+016D 853B46          203                                             mov     46h,3Bh
+0170 853A45          204                                             mov             45h,3Ah
+0173 853844          205                                             mov     44h,38h
+0176 853743          206                                             mov             43h,37h
+0179 853642          207                                             mov             42h,36h
+017C 5342FB          208                                             anl             42h,#0FBh       ;39 is decimal;P0.2
+                              -> h
+017F 853541          209                                             mov     41h,35h         ;2nd 7-seg from left
+0182 853440          210                                             mov     40h,34h
+0185 7C02            211                                             mov TEMP,#02h   ;mask 48h,47h,46h,45h if required
+0187 7940            212                                             mov TEMPPTR,#40h
+0189 31A4            213                                             call maskzeros
+018B 22              214                                     ret;LB
+018C                 215                                     GN:
+018C 853644          216                                             mov     44h,36H         ;2nd 7-seg from left
+018F 853743          217                                             mov     43h,37H         ;3rd
+0192 853842          218                                             mov     42h,38H         ;4th
+0195 853941          219                                             mov     41h,39h         ;5th
+0198 53417F          220                                             anl     41h,#7Fh        ;3Ah is decimal
+019B 853B40          221                                             mov     40h,3Bh         ;6th
+019E 7C03            222                                             mov TEMP,#03h           ;mask 44h,43h,42h,41h if re
+                             quired
+01A0 7944            223                                             mov TEMPPTR,#44h
+01A2 31A4            224                                             call maskzeros
+                     225     
+01A4                 226                                                     maskzeros:
+01A4 E7              227                                                             mov a,@TEMPPTR
+01A5 B42405          228                                                             cjne a,#24h, quitmasking;otherwise 
+                             mask
+01A8 77FF            229                                                             mov @TEMPPTR,#0ffh
+01AA 09              230                                                             inc     TEMPPTR 
+01AB DCF7            231                                                             djnz TEMP,maskzeros
+01AD                 232                                                     quitmasking:
+01AD 22              233                                                     ret;maskzeros
+                     234     ;=============MAIN==============================================
+01AE                 235     main:
+                     236     ;setb ip.4 ; priority to serial
+01AE 75815F          237             mov sp,#5fh ;Stack starts from 0x60
+01B1 C220            238             clr FLAG ;clear flag bit
+01B3 53877F          239             anl pcon,#7fh ;set SMOD=0 ie devide by 32
+01B6 438922          240             orl tmod,#22h ;time-1 mode-2 for serial; timer-0 mode2 for display
+01B9 758C00          241             mov th0,#00h ;count 256
+01BC D28C            242             setb tr0
+01BE 758DF4          243             mov th1,#BAUDNUM
+01C1 D28E            244             setb tr1
+01C3 759850          245             mov scon,#50h ;serial mode-2, REN=1
+01C6 43A892          246             orl ie,#92h ;enable global-0x80 serial-0x10 & T0-0x02 interrupts
+01C9 751040          247             MOV 10h,#displayRAM ;bank-2 pointer     R0
+A51 MACRO ASSEMBLER  AND_FZI_FXI                                                          07/07/2018 18:04:55 PAGE     5
+
+01CC 751830          248             MOV 18h,#serialRAM ;bank-3 pointer      R0
+01CF 512C            249             call helloworld ;initialize RAM with "HELLO"
+01D1 900253          250             mov dptr,#digits
+01D4 80FE            251     wait: sjmp wait
+                     252     ;===============Display Digits Bank-2====================
+01D6                 253     displayfxn:
+01D6 C0D0            254             push psw
+01D8 D2D4            255             setb RS1 ;Bank-2
+01DA C2D3            256             clr RS0 ;Bank-2
+01DC 31EC            257             call transistorselect ;transistor(COUNTER)
+01DE 8680            258             mov p0,@POINTER ;pointer of display RAM
+01E0 0A              259             inc COUNTER
+01E1 08              260             inc POINTER
+01E2 BA0904          261             cjne counter,#MAX,exitdisplayfxn;DIGITS has  letters + NULL
+01E5 7840            262                     mov POINTER,#displayRAM
+01E7 7A00            263                     mov counter,#00h
+01E9                 264             exitdisplayfxn:
+01E9 D0D0            265             pop psw
+01EB 22              266             ret
+01EC                 267     transistorselect:
+                     268             ;bit addressable Port3 |0xB7|----|0x0B5|0x0B4|0x0B3|0x0B2|0x0B1|----|
+01EC 43A0FF          269             orl     p2,#0ffh;turn off T0-T6 large segments
+01EF D2B6            270             setb    p3.6    ;turn off T7 small segment
+01F1 D2B7            271             setb    p3.7    ;turn off T8 small segment
+01F3 7580FF          272             mov p0,#0ffh ;turn off all LEDs
+                     273             ;       least significant digit
+01F6 BA0003          274             transistor0: cjne COUNTER,#00h,transistor1
+01F9 C2A6            275                     clr 0A6h ;Seg-1 Turned On CLR P2.6              Most
+01FB 22              276                     ret
+01FC BA0103          277             transistor1: cjne COUNTER,#01h,transistor2
+01FF C2A5            278                     clr 0A5h ;Seg-2 Turned On CLR P2.5
+0201 22              279                     ret
+0202 BA0203          280             transistor2: cjne COUNTER,#02h,transistor3
+0205 C2A4            281                     clr 0A4h ;Seg-3 Turned On CLR P2.4
+0207 22              282                     ret
+0208 BA0303          283             transistor3: cjne COUNTER,#03h,transistor4
+020B C2A3            284                     clr 0A3h ;Seg-4 Turned On CLR P2.3
+020D 22              285                     ret
+020E BA0403          286             transistor4: cjne COUNTER,#04h,transistor5
+0211 C2A2            287                     clr 0A2h ;Seg-5 Turned On CLR P2.2
+0213 22              288                     ret
+0214 BA0503          289             transistor5: cjne COUNTER,#05h,transistor6
+0217 C2A1            290                     clr 0A1h ;Seg-0 Turned On CLR P2.1
+0219 22              291                     ret
+021A BA0603          292             transistor6: cjne COUNTER,#06h,transistor7
+021D C2A0            293                     clr 0A0h ;Seg-0 Turned On CLR P2.0      
+021F 22              294                     ret
+0220 BA0703          295             transistor7: cjne COUNTER,#07h,transistor8
+0223 C2B6            296                     clr 0B6h ;Seg-0 Turned On CLR P3.6
+0225 22              297                     ret
+0226 BA0802          298             transistor8: cjne COUNTER,#08h,testfailed
+0229 C2B7            299                     clr 0B7h ;Seg-0 Turned On CLR P3.7              Least
+022B 22              300             testfailed:ret
+                     301     ;================= initialize RAM with HELLO=======================
+022C                 302     helloworld:
+022C C0D0            303             PUSH PSW ;save RS0,RS1 ie BANK-x
+022E C2D3            304             CLR RS0 ;bank-0
+0230 C2D4            305             CLR RS1 ;bank-0
+0232 7840            306             MOV POINTER,#displayRAM ;40h
+0234 7646            307             mov @POINTER,#46h       ;T1 =@48h <-H
+0236 08              308             inc POINTER
+0237 7685            309             mov @POINTER,#85h       ;T2c=@47h <-E
+0239 08              310             inc POINTER
+023A 76E5            311             mov @POINTER,#0E5h      ;T4=@45h <-L
+023C 08              312             inc POINTER
+023D 76E5            313             mov @POINTER,#0E5h      ;T3=@46h <-L
+A51 MACRO ASSEMBLER  AND_FZI_FXI                                                          07/07/2018 18:04:55 PAGE     6
+
+023F 08              314             inc POINTER
+0240 7620            315             mov @POINTER,#20h       ;T5=@44h <- O. New format
+0242 08              316             inc POINTER
+0243 76FF            317             mov @POINTER,#0FFH      ;T9=@40h <-Null Tiny segment1
+0245 08              318             inc POINTER
+0246 76FF            319             mov @POINTER,#0FFH      ;T8=@41h <-Null Tiny segment2
+0248 08              320             inc POINTER
+0249 76FF            321             mov @POINTER,#0FFH      ;T7=@42h <-Null
+024B 08              322             inc POINTER
+024C 76FF            323             mov @POINTER,#0FFH      ;T6=@43h <-Null
+024E 7840            324             mov POINTER,#displayRAM
+0250 D0D0            325             POP PSW
+0252 22              326             RET
+                     327     ;==================Lookup Table====================================
+0253 247E151C        328     digits:DB 24h,7Eh,15h,1Ch,4Eh,8Ch,84h,3Eh,04h,0Ch;0,1,2,. . .9 ACTIVE LOW
+0257 4E8C843E                
+025B 040C                    
+025D 7FFDFBF7        329     transistor:DB 7fh,0fdh,0fbh,0f7h,0efh,0dfh;T1,T2,T3,T4,T5,T6 ACTIVE LOW
+0261 EFDF                    
+                     330     end
+A51 MACRO ASSEMBLER  AND_FZI_FXI                                                          07/07/2018 18:04:55 PAGE     7
+
+SYMBOL TABLE LISTING
+------ ----- -------
+
+
+N A M E             T Y P E  V A L U E   ATTRIBUTES
+
+BAUDNUM. . . . . .  N NUMB   FFF4H   A   
+COMMON . . . . . .  C ADDR   00A7H   A   
+COUNTER. . . . . .    REG    R2          
+DECIMALPLACE3. . .  C ADDR   00DFH   A   
+DIGITS . . . . . .  C ADDR   0253H   A   
+DISPLAYFXN . . . .  C ADDR   01D6H   A   
+DISPLAYRAM . . . .  N NUMB   0040H   A   
+EXIT0. . . . . . .  C ADDR   00A2H   A   
+EXITDISPLAYFXN . .  C ADDR   01E9H   A   
+EXITGRAM . . . . .  C ADDR   00F4H   A   
+FLAG . . . . . . .  B ADDR   0024H.0 A   
+GN . . . . . . . .  C ADDR   018CH   A   
+GRAM . . . . . . .  C ADDR   00BAH   A   
+HELLOWORLD . . . .  C ADDR   022CH   A   
+IE . . . . . . . .  D ADDR   00A8H   A   
+LB . . . . . . . .  C ADDR   0167H   A   
+MAIN . . . . . . .  C ADDR   01AEH   A   
+MAPPING. . . . . .  C ADDR   00B0H   A   
+MARKER . . . . . .  N NUMB   000AH   A   
+MASKZEROS. . . . .  C ADDR   01A4H   A   
+MAX. . . . . . . .  N NUMB   0009H   A   
+NOTCT. . . . . . .  C ADDR   0086H   A   
+NOTGN. . . . . . .  C ADDR   009BH   A   
+NOTGRAMS . . . . .  C ADDR   005CH   A   
+NOTLB. . . . . . .  C ADDR   0078H   A   
+NOTOM. . . . . . .  C ADDR   008DH   A   
+NOTOZ. . . . . . .  C ADDR   0071H   A   
+NOTPCS . . . . . .  C ADDR   0063H   A   
+NOTPERCENT . . . .  C ADDR   006AH   A   
+NOTTL. . . . . . .  C ADDR   00A2H   A   
+NOTWT. . . . . . .  C ADDR   0094H   A   
+NOTZT. . . . . . .  C ADDR   007FH   A   
+OZ . . . . . . . .  C ADDR   0142H   A   
+P0 . . . . . . . .  D ADDR   0080H   A   
+P2 . . . . . . . .  D ADDR   00A0H   A   
+P3 . . . . . . . .  D ADDR   00B0H   A   
+PCON . . . . . . .  D ADDR   0087H   A   
+PCS. . . . . . . .  C ADDR   00FBH   A   
+PERCENT. . . . . .  C ADDR   011DH   A   
+POINTER. . . . . .    REG    R0          
+POSITIVE . . . . .  C ADDR   00ACH   A   
+PSW. . . . . . . .  D ADDR   00D0H   A   
+PUSHINRAM. . . . .  C ADDR   003FH   A   
+QUITMASKING. . . .  C ADDR   01ADH   A   
+RI . . . . . . . .  B ADDR   0098H.0 A   
+RS0. . . . . . . .  B ADDR   00D0H.3 A   
+RS1. . . . . . . .  B ADDR   00D0H.4 A   
+SBUF . . . . . . .  D ADDR   0099H   A   
+SCON . . . . . . .  D ADDR   0098H   A   
+SERIAL . . . . . .  C ADDR   000EH   A   
+SERIALMAX. . . . .  N NUMB   000FH   A   
+SERIALRAM. . . . .  N NUMB   0030H   A   
+SP . . . . . . . .  D ADDR   0081H   A   
+TEMP . . . . . . .    REG    R4          
+TEMPCOUNTER. . . .    REG    R3          
+TEMPPTR. . . . . .    REG    R1          
+TESTFAILED . . . .  C ADDR   022BH   A   
+TH0. . . . . . . .  D ADDR   008CH   A   
+TH1. . . . . . . .  D ADDR   008DH   A   
+TIMER0 . . . . . .  C ADDR   0002H   A   
+A51 MACRO ASSEMBLER  AND_FZI_FXI                                                          07/07/2018 18:04:55 PAGE     8
+
+TMOD . . . . . . .  D ADDR   0089H   A   
+TR0. . . . . . . .  B ADDR   0088H.4 A   
+TR1. . . . . . . .  B ADDR   0088H.6 A   
+TRANSISTOR . . . .  C ADDR   025DH   A   
+TRANSISTOR0. . . .  C ADDR   01F6H   A   
+TRANSISTOR1. . . .  C ADDR   01FCH   A   
+TRANSISTOR2. . . .  C ADDR   0202H   A   
+TRANSISTOR3. . . .  C ADDR   0208H   A   
+TRANSISTOR4. . . .  C ADDR   020EH   A   
+TRANSISTOR5. . . .  C ADDR   0214H   A   
+TRANSISTOR6. . . .  C ADDR   021AH   A   
+TRANSISTOR7. . . .  C ADDR   0220H   A   
+TRANSISTOR8. . . .  C ADDR   0226H   A   
+TRANSISTORSELECT .  C ADDR   01ECH   A   
+UPDATERAM. . . . .  C ADDR   0026H   A   
+WAIT . . . . . . .  C ADDR   01D4H   A   
+
+
+REGISTER BANK(S) USED: 0 
+
+
+ASSEMBLY COMPLETE.  0 WARNING(S), 0 ERROR(S)

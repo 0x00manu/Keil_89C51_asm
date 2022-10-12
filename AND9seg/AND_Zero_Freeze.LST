@@ -1,0 +1,738 @@
+A51 MACRO ASSEMBLER  AND_ZERO_FREEZE                                                      08/18/2018 06:34:20 PAGE     1
+
+
+MACRO ASSEMBLER A51 V8.00b
+OBJECT MODULE PLACED IN AND_Zero_Freeze.OBJ
+ASSEMBLER INVOKED BY: C:\Keil\C51\BIN\A51.EXE AND_Zero_Freeze.asm SET(SMALL) DEBUG EP
+
+LOC  OBJ            LINE     SOURCE
+
+                       1     ; This program is intended for AND EK-410V and FX-3000i with Zero Freeze
+                       2     ; 7+2+1 Hardware
+                       3     ; it detects baud rates--300,600,1200,2400,4800,9200
+                       4     ; uses CR+LF as delimeter, pairity any, stop bit-1
+                       5     ;|30|31|32|33|34|35|36|37|38|39|3A|3B|3C|3D|3E|3F |                             
+                       6     ;|S | T| ,| +| 0| 0| 0| 0| 0| .| 0| 0|  |  | g| CR|LF|
+                       7     ;|49|  |  |49|40|41|42|43|44.| |45|46|  |47|48|   |                             
+  REG                  8     POINTER         equ r0 ;RAM pointer at top of RAM
+  REG                  9     TEMPPTR         equ r1
+  REG                 10     COUNTER         equ r2 ;counter
+  REG                 11     TEMPCOUNTER     equ     r3
+  REG                 12     TEMP            equ r4
+  REG                 13     countTX         equ r5 ;counts number of bytes sent by TX eg,
+  REG                 14     TEMP2           equ r6
+  0007                15     errorcount      equ 7
+  000A                16     MAX                     equ 0Ah; use 10 transistors
+  00FF                17     MaxErrorCount   equ 255d 
+  000F                18     countMAX        equ 0Fh ;for AND [DATA+Cr+Lf]=0E bytes
+  0004                19     serialOFFSET    equ 04h;|S | T| ,| +|
+  0030                20     serialRAM       equ 30h 
+  0040                21     displayRAM      equ     40h
+  0020                22     FLAG            bit 20h
+  0021                23     ERRORFLAG       bit     21h
+  0022                24     BAUDFOUND       bit     22h
+  0023                25     CR_FLAG         bit     23h
+  0024                26     decimalFlag     bit 24h
+                      27     
+0000                  28     org 0000h
+0000 21E1             29             jmp main
+0002                  30     timer0:
+000B                  31     org 000Bh
+000B 5156             32             acall displayfxn
+000D 32               33             reti
+000E                  34     serial:                                            
+0023                  35     org 0023H
+0023 209902           36             jb ti,nothingtodo
+0026 1129             37             call receiveRoutine;updateRAM
+0028 32               38             nothingtodo:reti
+0029                  39     receiveRoutine: 
+0029 C0D0             40             push psw
+002B C0E0             41             push 0e0h ;push A
+002D D2D3             42             setb rs0 ;BANK-3
+002F D2D4             43             setb rs1 ;BANK-3
+                      44             ;------fetch the received byte-------
+0031 C298             45             clr ri
+0033 E599             46             mov a,sbuf
+0035 547F             47             anl     a,#7fh
+0037 750700           48             mov errorcount,#00h
+                      49             ;------------find Marker------------------
+003A 20200B           50                     jb      FLAG,FlagIsSetAlready
+003D 202304           51                             jb CR_FLAG,TestForLF
+0040 115E             52                     acall DelimeterTest_CR;FLAG is set in the routine
+0042 8015             53                             jmp exit0
+0044                  54                             TestForLF:
+0044 1164             55                     acall DelimeterTest_LF
+0046 8011             56                             jmp exit0
+0048                  57                     FlagIsSetAlready:               
+0048 1179             58                             acall PushInRAM
+A51 MACRO ASSEMBLER  AND_ZERO_FREEZE                                                      08/18/2018 06:34:20 PAGE     2
+
+                      59     ;------entred in RAM--------exit serial----------
+004A BA0F0C           60                     cjne COUNTER,#countMAX,exit0
+004D C220             61                             clr     FLAG
+004F 117D             62                             acall   TransferDigits
+0051 11B1             63                             acall   SignRoutine
+0053 11BD             64                             acall   StabilityRoutine
+0055 11CF             65                             acall   UnitsRoutine
+0057 31BB             66                             acall   ZerosElimination
+0059 D0E0             67             exit0:  pop 0E0h
+005B D0D0             68                             pop PSW
+005D 22               69     ret;receiveRoutine
+005E                  70                                                             DelimeterTest_CR:
+005E B40D02           71                                                                             cjne a,#0Dh,notCarr
+                             iageReturn
+0061 D223             72                                                                                     setb    CR_
+                             FLAG; CR found
+0063                  73                                                                             notCarriageReturn:
+0063 22               74                                                                             RET
+0064                  75                                                             DelimeterTest_LF:
+0064 C223             76                                                                             clr CR_FLAG;immidia
+                             te after CR
+0066 B40A03           77                                                                             cjne a,#0Ah,notLine
+                             Feed
+0069 116D             78                                                                                     acall Delim
+                             eterRoutine
+006B 22               79                                                                             RET
+006C                  80                                                                             notLineFeed:
+006C 22               81                                                             ret;DelimeterTest
+006D                  82                                                             DelimeterRoutine:
+006D D220             83                                                                             setb FLAG
+006F D222             84                                                                             setb BAUDFOUND
+0071 750700           85                                                                             mov errorcount,#00h
+                             ;avoids calling CAS
+0074 7A00             86                                                                             mov COUNTER,#00h
+0076 7830             87                                                                             mov POINTER,#serial
+                             RAM                                                  
+0078 22               88                                                             ret;DelimeterRoutine
+                      89     
+0079                  90                                                             PushInRAM:
+0079 F6               91                                                                                     mov @POINTE
+                             R,a
+007A 08               92                                                                                     inc     POI
+                             NTER
+007B 0A               93                                                                                     inc COUNTER
+                              
+007C 22               94                                                             ret;DataFound
+                      95     
+007D                  96                                                             TransferDigits:
+007D 7A00             97                                                                             mov     COUNTER,#00
+                             h
+007F 7430             98                                                                             mov a,#serialRAM
+0081 2404             99                                                                             add a,#serialOFFSET
+                             ; actual data starts after [ST,+]
+0083 F8              100                                                                             mov POINTER,A
+0084 7B00            101                                                                             mov TEMPCOUNTER,#00
+                             h                              ;
+0086 7940            102                                                                             mov TEMPPTR,#displa
+                             yRAM                           ;
+0088                 103                                                                             RepeatedMapping:   
+                                                                            ;
+0088 E6              104                                                                                     mov a,@POIN
+                             TER                                            ;
+0089 B42E06          105                                                                                             cjn
+                             e a,#'.',notdecimal                    ;
+008C 11AB            106                                                                                                
+                                  call decimalroutine                       ;
+A51 MACRO ASSEMBLER  AND_ZERO_FREEZE                                                      08/18/2018 06:34:20 PAGE     3
+
+008E D224            107                                                                                                
+                                  setb decimalFlag
+0090 8002            108                                                                                                
+                                  jmp nextdigit                             ;
+0092                 109                                                                                             not
+                             decimal:                                               ;
+0092 93              110                                                                                                
+                                  movc a,@a+dptr                            ;
+0093 F7              111                                                                                                
+                                  mov     @TEMPPTR,A                                ;
+0094                 112                                                                                     nextdigit: 
+                                                                                    ;
+0094 0A              113                                                                                     inc     COU
+                             NTER                                                   ;
+0095 08              114                                                                                     inc     POI
+                             NTER                                                   ;
+0096 09              115                                                                                     inc TEMPPTR
+                                                                                    ;
+0097 BA08EE          116                                                                                     cjne counte
+                             r,#08h,repeatedMapping;[00000.00]
+009A 202407          117                                                                                     jb decimalF
+                             lag,shiftingNotReq
+009D 31A2            118                                                                                             aca
+                             ll shift
+009F E53B            119                                                                                             mov
+                              a,3Bh
+00A1 93              120                                                                                             mov
+                             c a,@a+dptr
+00A2 F546            121                                                                                             mov
+                              46h,a
+00A4                 122                                                                                             shi
+                             ftingNotReq:
+00A4 C224            123                                                                                             clr
+                              decimalFlag
+00A6 7A00            124                                                                                             mov
+                              counter,#00h                                  ;
+00A8 7830            125                                                                                             mov
+                              POINTER,#serialRAM                    ;
+00AA 22              126                                                             ret;TransferDigits      
+00AB                 127                                                             decimalroutine:
+00AB 19              128                                                                                     dec TEMPPTR
+00AC E7              129                                                                                     mov     a,@
+                             TEMPPTR
+00AD 54FB            130                                                                                     anl     a,#
+                             0fbh
+00AF F7              131                                                                                     mov     @TE
+                             MPPTR,a
+00B0 22              132                                                             ret;decimalroutine
+                     133     
+00B1                 134                                                             SignRoutine:; S/U/Q/O and sign at 4
+                             9h RAM
+00B1 E533            135                                                                             mov a,33h          
+                                          ;33h stores +/-
+00B3 434920          136                                                                             orl 49h,#20h
+00B6 B42D03          137                                                                     cjne a,#'-',updateSign
+00B9 5349DF          138                                                                             anl 49h,#0DFh
+00BC                 139                                                             updateSign:
+00BC 22              140                                                             ret;
+00BD                 141                                                             StabilityRoutine:
+00BD E530            142                                                                     mov     a,30h
+00BF 53497F          143                                                                             anl 49h,#7Fh;Stable
+00C2 434908          144                                                                             orl 49h,#08h
+00C5 B45506          145                                                                     cjne a,#'U',Stable; S=Q; U=
+                             unstable
+00C8 434980          146                                                                             orl 49h,#80h ;NOT s
+                             tble
+A51 MACRO ASSEMBLER  AND_ZERO_FREEZE                                                      08/18/2018 06:34:20 PAGE     4
+
+00CB 5349F7          147                                                                             anl 49h,#0F7h
+00CE                 148                                                                     Stable: 
+00CE 22              149                                                             ret;SignStability
+                     150     
+00CF                 151                                                             UnitsRoutine:
+00CF E53E            152                                                             mov a,3Eh
+00D1 B4670B          153                                                                     gram:cjne a,#'g',PCS
+00D4 7547FF          154                                                                                     mov 47h,#0f
+                             fh
+00D7 754826          155                                                                                     mov 48h,#26
+                             h
+00DA E53A            156                                                                     mov a,3ah; decimal used in 
+                             Shift_or_Not routine
+00DC 319A            157                                                                     acall Shift_or_Not
+00DE 22              158                                                                     ret;gram
+                     159     
+00DF B44307          160                                                                     PCS:cjne a,#'C',PER
+00E2 754785          161                                                                                     mov 47h,#08
+                             5h
+00E5 754827          162                                                                                     mov 48h,#27
+                             h
+00E8 22              163                                                                     ret
+00E9 B42507          164                                                                     PER:cjne a,#'%',DecimalOunc
+                             e
+00EC 754785          165                                                                             mov 47h,#085h
+00EF 7548D7          166                                                                             mov 48h,#0D7h
+                     167                                                                     ;mov a,**h; decimal used in
+                              Shift_or_Not routine
+                     168                                                                     ;acall Shift_or_Not
+00F2 22              169                                                                             ret
+00F3 B47A0F          170                                                                     DecimalOunce:cjne a,#'z',De
+                             cimalPound
+00F6 754756          171                                                                             mov 47h,#56h;o
+00F9 754835          172                                                                             mov 48h,#35h;z
+00FC E538            173                                                                     mov a,38h; decimal used in 
+                             Shift_or_Not routine
+00FE 319A            174                                                                     acall Shift_or_Not
+0100 E53A            175                                                                     mov a,3ah
+0102 319A            176                                                                     acall Shift_or_Not
+0104 22              177                                                                             ret
+0105 B4620B          178                                                                     DecimalPound:cjne a,#'b',Ou
+                             nceTroy
+0108 754767          179                                                                             mov     47h,#67h   
+                                  ;L
+010B 754846          180                                                                             mov 48h,#46h;b
+010E E537            181                                                                     mov a,37h; decimal used in 
+                             Shift_or_Not routine
+0110 319A            182                                                                     acall Shift_or_Not
+0112 22              183                                                                             ret
+0113 B4741E          184                                                                     OunceTroy:cjne a,#'t',Momme
+                                          
+0116 E53D            185                                                                                             mov
+                              a,3Dh                       ;**** A=3Dh
+0118 B47A0B          186                                                                                             cjn
+                             e a,#'z',Carat
+011B 754756          187                                                                             mov 47h,#56h;o
+011E 754835          188                                                                             mov 48h,#35h;z
+0121 E538            189                                                                     mov a,38h; decimal used in 
+                             Shift_or_Not routine
+0123 319A            190                                                                     acall Shift_or_Not
+0125 22              191                                                                             ret
+0126 B46319          192                                                                     Carat:cjne a,#'c',PennyWeig
+                             ht   ;**** A=3Dh
+0129 754727          193                                                                             mov 47h,#027h;C
+012C 754847          194                                                                             mov 48h,#47h ;t
+012F E53A            195                                                                     mov a,3ah; decimal used in 
+A51 MACRO ASSEMBLER  AND_ZERO_FREEZE                                                      08/18/2018 06:34:20 PAGE     5
+
+                             Shift_or_Not routine
+0131 319A            196                                                                     acall Shift_or_Not
+0133 22              197                                                                             ret
+0134 B46D16          198                                                                     Momme:cjne a,#'m',Grain
+0137 754796          199                                                                             mov 47h,#96h;m
+013A 754856          200                                                                             mov 48h,#56h;oh
+013D E539            201                                                                     mov a,39h; decimal used in 
+                             Shift_or_Not routine
+013F 319A            202                                                                     acall Shift_or_Not
+0141 22              203                                                                             ret
+0142                 204                                                                     PennyWeight:;conditions for
+                              't' aready checked
+0142 754754          205                                                                             mov 47h,#054h;d    
+                                                  ;****A=3Dh
+0145 75484D          206                                                                             mov 48h,#04dh;w
+0148 E53A            207                                                                     mov a,3ah; decimal used in 
+                             Shift_or_Not routine
+014A 319A            208                                                                     acall Shift_or_Not
+014C 22              209                                                                             ret
+014D B44E17          210                                                     Grain:cjne a,#'N',Tael
+0150 754726          211                                                             mov 47h,#26h  ;G
+0153 7548D6          212                                                             mov 48h,#0D6h ;n
+0156 E53A            213                                                     mov a,3ah
+0158 B42E01          214                                                     cjne a,#'.',notGNdot
+015B 22              215                                                             ret;
+015C                 216                                                     notGNdot:
+015C E546            217                                                     mov a,46h
+015E 54FB            218                                                     anl     a,#0fbh
+0160 F546            219                                                     mov 46h,a
+0162 31A2            220                                                     acall Shift
+0164 31B5            221                                                     acall Insert
+0166 22              222                                                     ret
+0167 B46C0B          223                                                                     Tael:cjne a,#'l',mes
+016A 754747          224                                                                             mov 47h,#47h
+016D 754867          225                                                                             mov 48h,#67h
+0170 E539            226                                                                     mov a,39h; decimal used in 
+                             Shift_or_Not routine
+0172 319A            227                                                                     acall Shift_or_Not
+0174 22              228                                                                             ret
+0175 B4730B          229                                                                     mes:cjne a,#'s',MLT
+0178 754796          230                                                                             mov 47h,#96h
+017B 754807          231                                                                             mov 48h,#07h
+017E E539            232                                                                     mov a,39h
+0180 319A            233                                                                     acall shift_or_Not
+0182 22              234                                                                     ret;mes
+0183 B4540C          235                                                                     MLT:cjne a,#'T',none
+0186 754796          236                                                                             mov 47h,#96h
+0189 754867          237                                                                             mov 48h,#67h
+018C E53A            238                                                                     mov a,3ah
+018E 319A            239                                                                     acall shift_or_Not
+0190 22              240                                                                     ret;mes
+                     241     
+0191 22              242                                                                     ret;MLT
+0192 7547FF          243                                                                     none:mov 47h,#0ffh
+0195 7548FF          244                                                                             mov 48h,#0ffh
+0198 22              245                                                                             ret
+0199 22              246                                                             ret;UnitsRoutine
+                     247     
+019A                 248                                                             Shift_or_not:
+019A B42E04          249                                                                     cjne a,#'.',goback
+019D 31A2            250                                                                     acall Shift
+019F 31B5            251                                                                     acall Insert
+01A1 22              252                                                                     goback:ret;Shift_or_not
+01A2                 253                                                             Shift:
+01A2 854140          254                                                                     mov 40h,41h;shift left
+01A5 854241          255                                                                     mov 41h,42h;shift left
+A51 MACRO ASSEMBLER  AND_ZERO_FREEZE                                                      08/18/2018 06:34:20 PAGE     6
+
+01A8 854342          256                                                                     mov 42h,43h;shift left
+01AB 854443          257                                                                     mov 43h,44h;shift left
+01AE 854544          258                                                                     mov 44h,45h;shift left
+01B1 854645          259                                                                     mov 45h,46h;shift left
+01B4 22              260                                                             ret;Shift_N_Insert
+01B5                 261                                                             Insert:
+01B5 7430            262                                                                     mov     a,#'0'
+01B7 93              263                                                                     movc a,@a+dptr             
+                                                                                                                        
+                                                                                                                        
+                                                                            
+01B8 F546            264                                                                     mov 46h,a               ;Ze
+                             ro Freeze
+01BA 22              265                                                             ret;Insert
+01BB                 266                                                             ZerosElimination:
+01BB 7420            267                                                             mov a,#' '
+01BD 93              268                                                             movc a,@a+dptr
+01BE FC              269                                                             mov TEMP,a
+                     270                                                             ;-------------
+01BF 7430            271                                                             mov a,#'0'
+01C1 93              272                                                             movc a,@a+dptr
+01C2 B5401B          273                                                             cjne a,40h,exit_ZerosElimination
+01C5 8C40            274                                                             mov 40h,TEMP
+01C7 B54116          275                                                             cjne a,41h,exit_ZerosElimination
+01CA 8C41            276                                                             mov 41h,TEMP                       
+                                                          
+01CC B54211          277                                                             cjne a,42h,exit_ZerosElimination
+01CF 8C42            278                                                             mov 42h,TEMP
+01D1 B5430C          279                                                             cjne a,43h,exit_ZerosElimination
+01D4 8C43            280                                                             mov 43h,TEMP
+01D6 B54407          281                                                             cjne a,44h,exit_ZerosElimination
+01D9 8C44            282                                                             mov 44h,TEMP
+01DB B54502          283                                                             cjne a,45h,exit_ZerosElimination
+01DE 8C45            284                                                             mov 45h,TEMP                       
+                                                                                                                  
+01E0                 285                                                             exit_ZerosElimination:
+01E0 22              286                                                             ret;ZerosElimination
+                     287     ;=============MAIN==============================================
+01E1                 288     main:
+                     289     ;turn off everything  ;
+01E1 7580FF          290             mov P0,#0ffh      ;
+01E4 75A0FF          291             mov P2,#0ffh      ;
+01E7 750700          292             mov 7h,#00h
+01EA D2B6            293             setb P3.6                 ;
+01EC D2B7            294             setb P3.7                 ;
+                     295     ;turned off everything;
+01EE 75815F          296             mov sp,#5fh ;Stack starts from 0x60
+01F1 C220            297             clr FLAG ;clear flag bit
+01F3 C221            298             clr     ERRORFLAG
+01F5 C222            299             clr BAUDFOUND
+01F7 C223            300             clr     CR_FLAG
+01F9 53877F          301             anl pcon,#7fh ;set SMOD=0 ie devide by 32
+01FC 438922          302             orl tmod,#22h ;time-1 mode-2 for serial; timer-0 mode2 for display
+01FF 758C00          303             mov th0,#00h ;count 256
+0202 D28C            304             setb tr0
+0204 759850          305             mov scon,#50h ;serial mode-2, REN=1
+0207 43A892          306             orl ie,#92h ;enable global-0x80 serial-0x10 & T0-0x02 interrupts
+020A 751040          307             MOV 10h,#displayRAM ;bank-2 pointer     R0
+020D 751830          308             MOV 18h,#serialRAM ;bank-3 pointer      R0
+0210 51C3            309             call helloAND ;initialize RAM with "HELLO"
+0212 7D00            310             mov countTX,#00h
+0214 900310          311             mov dptr,#ASCII_HW9
+0217 758DFD          312             mov th1,#-3d
+021A D28E            313             setb tr1
+021C 5120            314             acall BAUDSEARCH
+021E 80FE            315     HERE:   sjmp HERE
+A51 MACRO ASSEMBLER  AND_ZERO_FREEZE                                                      08/18/2018 06:34:20 PAGE     7
+
+0220                 316     BAUDSEARCH:     
+0220 758DFD          317             bps9600:mov th1,#-3d
+0223 51ED            318                     acall delay
+0225 20222A          319                     jb BAUDFOUND, endofmain
+0228 758DFA          320             bps4800:mov th1,#-6d
+022B 51ED            321                     acall delay
+022D 202222          322                     jb BAUDFOUND, endofmain
+0230 758DF4          323             bps2400:mov th1,#-12d
+0233 51ED            324                     acall delay
+0235 20221A          325                     jb BAUDFOUND, endofmain
+0238 758DE8          326             bps1200:mov th1,#-24d
+023B 51ED            327                     acall delay
+023D 202212          328                     jb BAUDFOUND, endofmain
+0240 758DD0          329             bps6000:mov th1,#-48d
+0243 51ED            330                     acall delay
+0245 20220A          331                     jb BAUDFOUND, endofmain
+0248 758DA0          332             bps300:mov th1,#-96d
+024B 51ED            333                     acall delay
+024D 202202          334                     jb BAUDFOUND, endofmain
+0250 80CE            335     sjmp    BAUDSEARCH
+0252 2022FD          336     endofmain: jb BAUDFOUND,endofmain
+0255 22              337     RET;BAUDSEARCH
+                     338     ;===============Display Digits Bank-2====================
+0256                 339     displayfxn:
+0256 C0D0            340             push psw
+0258 C0E0            341             push 0E0h
+025A D2D4            342             setb RS1 ;Bank-2
+025C C2D3            343             clr RS0 ;Bank-2
+025E 517D            344             call transistorselect ;transistor(COUNTER)
+0260 8680            345             mov p0,@POINTER ;pointer of display RAM
+0262 0A              346             inc COUNTER
+0263 08              347             inc POINTER
+0264 BA0A11          348             cjne counter,#MAX,exitdisplayfxn;DIGITS has  letters + NULL
+0267 7840            349                     mov POINTER,#displayRAM
+0269 7A00            350                     mov counter,#00h
+026B 0507            351                     inc 7h
+026D AF07            352                     mov R7,7h
+026F BFFF06          353                     cjne R7,#MaxErrorCount,NotCallCAS
+0272 C220            354                             clr     FLAG
+0274 C222            355                             clr BAUDFOUND
+0276 51C3            356                             call helloAND
+0278                 357                             NotCallCAS:
+0278                 358             exitdisplayfxn:
+0278 D0E0            359             pop 0E0h
+027A D0D0            360             pop psw
+027C 22              361             ret
+027D                 362     transistorselect:
+                     363             ;bit addressable Port3 |0xB7|----|0x0B5|0x0B4|0x0B3|0x0B2|0x0B1|----|
+027D 75A0FF          364             mov     p2,#0ffh;turn off T0-T6 large segments
+0280 7580FF          365             mov     p0,#0ffh ;turn off all LEDs
+0283 D2B6            366             setb    p3.6    ;turn off T7 small segment
+0285 D2B7            367             setb    p3.7    ;turn off T8 small segment
+                     368             ;       least significant digit
+0287 BA0003          369             transistor0: cjne COUNTER,#00h,transistor1
+028A C2A6            370                     clr 0A6h ;Seg-1 Turned On CLR P2.6 pin27        Most
+028C 22              371                     ret
+028D BA0103          372             transistor1: cjne COUNTER,#01h,transistor2
+0290 C2A5            373                     clr 0A5h ;Seg-2 Turned On CLR P2.5
+0292 22              374                     ret
+0293 BA0203          375             transistor2: cjne COUNTER,#02h,transistor3
+0296 C2A4            376                     clr 0A4h ;Seg-3 Turned On CLR P2.4
+0298 22              377                     ret
+0299 BA0303          378             transistor3: cjne COUNTER,#03h,transistor4
+029C C2A3            379                     clr 0A3h ;Seg-4 Turned On CLR P2.3
+029E 22              380                     ret
+029F BA0403          381             transistor4: cjne COUNTER,#04h,transistor5
+A51 MACRO ASSEMBLER  AND_ZERO_FREEZE                                                      08/18/2018 06:34:20 PAGE     8
+
+02A2 C2A2            382                     clr 0A2h ;Seg-5 Turned On CLR P2.2
+02A4 22              383                     ret
+02A5 BA0503          384             transistor5: cjne COUNTER,#05h,transistor6
+02A8 C2A1            385                     clr 0A1h ;Seg-6 Turned On CLR P2.1
+02AA 22              386                     ret
+02AB BA0603          387             transistor6: cjne COUNTER,#06h,transistor7
+02AE C2A0            388                     clr 0A0h ;Seg-7 Turned On CLR P2.0      
+02B0 22              389                     ret
+02B1 BA0703          390             transistor7: cjne COUNTER,#07h,transistor8
+02B4 C2B6            391                     clr 0B6h ;Seg-8 Turned On CLR P3.6
+02B6 22              392                     ret
+02B7 BA0803          393             transistor8: cjne COUNTER,#08h,transistor9
+02BA C2B7            394                     clr 0B7h ;Seg-9 Turned On CLR P3.7              Least
+02BC 22              395                     ret
+02BD BA0902          396             transistor9: cjne COUNTER,#09H,testfailed
+02C0 C2A7            397                     clr 0A7h ;Seg-10 Turned On CLR P2.7             Sign/Stability
+02C2 22              398             testfailed:ret
+                     399     ;================= initialize RAM with HELLO=======================
+02C3                 400     helloAND:
+02C3 C0D0            401             PUSH PSW ;save RS0,RS1 ie BANK-x
+02C5 C2D3            402             CLR RS0 ;bank-0
+02C7 C2D4            403             CLR RS1 ;bank-0
+02C9 7840            404             MOV POINTER,#displayRAM ;40h
+02CB 7646            405             mov @POINTER,#46h       ;40=T1  <-H
+02CD 08              406             inc POINTER
+02CE 7685            407             mov @POINTER,#085h      ;41=T2  <-E
+02D0 08              408             inc POINTER
+02D1 76E5            409             mov @POINTER,#0E5h      ;42=T4  <-L
+02D3 08              410             inc POINTER
+02D4 76E5            411             mov @POINTER,#0E5h      ;43=T3  <-L
+02D6 08              412             inc POINTER
+02D7 7620            413             mov @POINTER,#20H       ;44=T5  <-O
+02D9 08              414             inc POINTER
+02DA 76FF            415             mov @POINTER,#0FFH      ;45=T6  <-Null 
+02DC 08              416             inc POINTER
+02DD 76FF            417             mov @POINTER,#0FFH      ;46=T7  <-Null  
+02DF 08              418             inc POINTER
+02E0 76FF            419             mov @POINTER,#0FFH      ;47=T8  <-Null  Tiny segment1
+02E2 08              420             inc POINTER
+02E3 76FF            421             mov @POINTER,#0FFH      ;48=T9  <-Null  Tiny segment2
+02E5 08              422             inc POINTER
+02E6 76FF            423             mov @POINTER,#0FFH      ;49=T0  <-LED-set
+02E8 7840            424             mov POINTER,#displayRAM
+02EA D0D0            425             POP PSW
+02EC 22              426             RET
+                     427     
+                     428     ;==============Delay====================
+02ED                 429     delay:
+02ED 85FF50          430             mov 50h,0ffh
+02F0 85FF51          431             loop1:mov 51h,0ffh
+02F3 755203          432                     loop2:  mov 52h,#3h
+02F6 D552FD          433                     loop3:djnz 52h,loop3
+02F9 D551F7          434                                     djnz 51h,loop2
+02FC D550F1          435                                             djnz 50h, loop1
+02FF 22              436                     ret
+                     437     ;==================Lookup Table====================================
+0300 247E151C        438     digits:DB 24h,7Eh,15h,1Ch,4Eh,8Ch,84h,3Eh,04h,0Ch;0,1,2,. . .9 ACTIVE LOW
+0304 4E8C843E                
+0308 040C                    
+030A 7FFDFBF7        439     transistor:DB 7fh,0fdh,0fbh,0f7h,0efh,0dfh;T1,T2,T3,T4,T5,T6 ACTIVE LOW
+030E EFDF                    
+                     440     ;for Small Segments
+0310 FFFFFFFF        441     ASCII_HW9:DB 0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ff
+                             h;00-0F
+0314 FFFFFFFF                
+0318 FFFFFFFF                
+A51 MACRO ASSEMBLER  AND_ZERO_FREEZE                                                      08/18/2018 06:34:20 PAGE     9
+
+031C FFFFFFFF                
+0320 FFFFFFFF        442     DB                       0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0
+                             ffh,0ffh,0ffh;10-1F
+0324 FFFFFFFF                
+0328 FFFFFFFF                
+032C FFFFFFFF                
+0330 FFFFFFFF        443     DB                       0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0
+                             dfh,0ffh,0ffh;20-2F  '-'@2dh
+0334 FFFFFFFF                
+0338 FFFFFFFF                
+033C FFDFFFFF                
+                     444                              ;0      1        2   3   4   5   6   7   8   9  
+0340 247E151C        445     DB                       24h,7Eh,15h,1Ch,4Eh,8Ch,84h,3Eh,04h,0Ch,0ffh,0ffh,0ffh,0ffh,0ffh,0
+                             ffh                  ;30-3F digits
+0344 4E8C843E                
+0348 040CFFFF                
+034C FFFFFFFF                
+                     446                              ;     A  B       C       D             E       F       G       H  
+                                  I        J       K       L       M        N       O       
+0350 FF844627        447     DB                       0ffh,84H,46h,27h,54h,07h,87h,26h,0c4h,0feh,06ch,45h,67h,96h,0D6h,5
+                             6h;40-4F 41->a-z
+0354 54078726                
+0358 C4FE6C45                
+035C 6796D656                
+                     448                              ;P   Q         R       S       T       U       V         W        
+                                  X       Y       Z
+0360 858CD72C        449     DB                       85h,08ch,0D7h,2ch,47h,64h,036h,04dh,0e4h,4ch,35h,0ffh,0ffh,0ffh,0f
+                             fh,0ffh;50-5F                                
+0364 4764364D                
+0368 E44C35FF                
+036C FFFFFFFF                
+                     450                              ;     a        b       c       d       e       f       g       h  
+                                  i       j        k       l      m        n        o        p    
+0370 FF844627        451     DB                       0ffh,84H,46h,27h,54h,07h,87h,26h,0c4h,0feh,06ch,45h,67h,96h,0D6h,5
+                             6h;60-6F 41->a-z
+0374 54078726                
+0378 C4FE6C45                
+037C 6796D656                
+                     452                              ;p   q         r       s       t       u       v         w        
+                                  x       y       z
+0380 858CD72C        453     DB                       85h,08ch,0D7h,2ch,47h,64h,036h,04dh,0e4h,4ch,35h,0ffh,0ffh,0ffh,0f
+                             fh,0ffh;70-7F                                
+0384 4764364D                
+0388 E44C35FF                
+038C FFFFFFFF                
+                     454                                     ;0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ff
+                             h,0ffh,0ffh,0ffh,0ffh,;80-8F
+                     455                                     ;0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ff
+                             h,0ffh,0ffh,0ffh,0ffh,;90-9F
+                     456                                     ;0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ff
+                             h,0ffh,0ffh,0ffh,0ffh,;A0-AF
+                     457                                     ;0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ff
+                             h,0ffh,0ffh,0ffh,0ffh,;B0-BF
+                     458                                     ;0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ff
+                             h,0ffh,0ffh,0ffh,0ffh,;C0-CF
+                     459                                     ;0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ff
+                             h,0ffh,0ffh,0ffh,0ffh,;D0-DF
+                     460                                     ;0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ff
+                             h,0ffh,0ffh,0ffh,0ffh,;E0-EF
+                     461                                     ;0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ffh,0ff
+                             h,0ffh,0ffh,0ffh,0ffh;F0-FF
+                     462     end
+A51 MACRO ASSEMBLER  AND_ZERO_FREEZE                                                      08/18/2018 06:34:20 PAGE    10
+
+SYMBOL TABLE LISTING
+------ ----- -------
+
+
+N A M E                T Y P E  V A L U E   ATTRIBUTES
+
+ASCII_HW9 . . . . . .  C ADDR   0310H   A   
+BAUDFOUND . . . . . .  B ADDR   0024H.2 A   
+BAUDSEARCH. . . . . .  C ADDR   0220H   A   
+BPS1200 . . . . . . .  C ADDR   0238H   A   
+BPS2400 . . . . . . .  C ADDR   0230H   A   
+BPS300. . . . . . . .  C ADDR   0248H   A   
+BPS4800 . . . . . . .  C ADDR   0228H   A   
+BPS6000 . . . . . . .  C ADDR   0240H   A   
+BPS9600 . . . . . . .  C ADDR   0220H   A   
+CARAT . . . . . . . .  C ADDR   0126H   A   
+COUNTER . . . . . . .    REG    R2          
+COUNTMAX. . . . . . .  N NUMB   000FH   A   
+COUNTTX . . . . . . .    REG    R5          
+CR_FLAG . . . . . . .  B ADDR   0024H.3 A   
+DECIMALFLAG . . . . .  B ADDR   0024H.4 A   
+DECIMALOUNCE. . . . .  C ADDR   00F3H   A   
+DECIMALPOUND. . . . .  C ADDR   0105H   A   
+DECIMALROUTINE. . . .  C ADDR   00ABH   A   
+DELAY . . . . . . . .  C ADDR   02EDH   A   
+DELIMETERROUTINE. . .  C ADDR   006DH   A   
+DELIMETERTEST_CR. . .  C ADDR   005EH   A   
+DELIMETERTEST_LF. . .  C ADDR   0064H   A   
+DIGITS. . . . . . . .  C ADDR   0300H   A   
+DISPLAYFXN. . . . . .  C ADDR   0256H   A   
+DISPLAYRAM. . . . . .  N NUMB   0040H   A   
+ENDOFMAIN . . . . . .  C ADDR   0252H   A   
+ERRORCOUNT. . . . . .  N NUMB   0007H   A   
+ERRORFLAG . . . . . .  B ADDR   0024H.1 A   
+EXIT0 . . . . . . . .  C ADDR   0059H   A   
+EXITDISPLAYFXN. . . .  C ADDR   0278H   A   
+EXIT_ZEROSELIMINATION  C ADDR   01E0H   A   
+FLAG. . . . . . . . .  B ADDR   0024H.0 A   
+FLAGISSETALREADY. . .  C ADDR   0048H   A   
+GOBACK. . . . . . . .  C ADDR   01A1H   A   
+GRAIN . . . . . . . .  C ADDR   014DH   A   
+GRAM. . . . . . . . .  C ADDR   00D1H   A   
+HELLOAND. . . . . . .  C ADDR   02C3H   A   
+HERE. . . . . . . . .  C ADDR   021EH   A   
+IE. . . . . . . . . .  D ADDR   00A8H   A   
+INSERT. . . . . . . .  C ADDR   01B5H   A   
+LOOP1 . . . . . . . .  C ADDR   02F0H   A   
+LOOP2 . . . . . . . .  C ADDR   02F3H   A   
+LOOP3 . . . . . . . .  C ADDR   02F6H   A   
+MAIN. . . . . . . . .  C ADDR   01E1H   A   
+MAX . . . . . . . . .  N NUMB   000AH   A   
+MAXERRORCOUNT . . . .  N NUMB   00FFH   A   
+MES . . . . . . . . .  C ADDR   0175H   A   
+MLT . . . . . . . . .  C ADDR   0183H   A   
+MOMME . . . . . . . .  C ADDR   0134H   A   
+NEXTDIGIT . . . . . .  C ADDR   0094H   A   
+NONE. . . . . . . . .  C ADDR   0192H   A   
+NOTCALLCAS. . . . . .  C ADDR   0278H   A   
+NOTCARRIAGERETURN . .  C ADDR   0063H   A   
+NOTDECIMAL. . . . . .  C ADDR   0092H   A   
+NOTGNDOT. . . . . . .  C ADDR   015CH   A   
+NOTHINGTODO . . . . .  C ADDR   0028H   A   
+NOTLINEFEED . . . . .  C ADDR   006CH   A   
+OUNCETROY . . . . . .  C ADDR   0113H   A   
+P0. . . . . . . . . .  D ADDR   0080H   A   
+P2. . . . . . . . . .  D ADDR   00A0H   A   
+A51 MACRO ASSEMBLER  AND_ZERO_FREEZE                                                      08/18/2018 06:34:20 PAGE    11
+
+P3. . . . . . . . . .  D ADDR   00B0H   A   
+PCON. . . . . . . . .  D ADDR   0087H   A   
+PCS . . . . . . . . .  C ADDR   00DFH   A   
+PENNYWEIGHT . . . . .  C ADDR   0142H   A   
+PER . . . . . . . . .  C ADDR   00E9H   A   
+POINTER . . . . . . .    REG    R0          
+PSW . . . . . . . . .  D ADDR   00D0H   A   
+PUSHINRAM . . . . . .  C ADDR   0079H   A   
+RECEIVEROUTINE. . . .  C ADDR   0029H   A   
+REPEATEDMAPPING . . .  C ADDR   0088H   A   
+RI. . . . . . . . . .  B ADDR   0098H.0 A   
+RS0 . . . . . . . . .  B ADDR   00D0H.3 A   
+RS1 . . . . . . . . .  B ADDR   00D0H.4 A   
+SBUF. . . . . . . . .  D ADDR   0099H   A   
+SCON. . . . . . . . .  D ADDR   0098H   A   
+SERIAL. . . . . . . .  C ADDR   000EH   A   
+SERIALOFFSET. . . . .  N NUMB   0004H   A   
+SERIALRAM . . . . . .  N NUMB   0030H   A   
+SHIFT . . . . . . . .  C ADDR   01A2H   A   
+SHIFTINGNOTREQ. . . .  C ADDR   00A4H   A   
+SHIFT_OR_NOT. . . . .  C ADDR   019AH   A   
+SIGNROUTINE . . . . .  C ADDR   00B1H   A   
+SP. . . . . . . . . .  D ADDR   0081H   A   
+STABILITYROUTINE. . .  C ADDR   00BDH   A   
+STABLE. . . . . . . .  C ADDR   00CEH   A   
+TAEL. . . . . . . . .  C ADDR   0167H   A   
+TEMP. . . . . . . . .    REG    R4          
+TEMP2 . . . . . . . .    REG    R6          
+TEMPCOUNTER . . . . .    REG    R3          
+TEMPPTR . . . . . . .    REG    R1          
+TESTFAILED. . . . . .  C ADDR   02C2H   A   
+TESTFORLF . . . . . .  C ADDR   0044H   A   
+TH0 . . . . . . . . .  D ADDR   008CH   A   
+TH1 . . . . . . . . .  D ADDR   008DH   A   
+TI. . . . . . . . . .  B ADDR   0098H.1 A   
+TIMER0. . . . . . . .  C ADDR   0002H   A   
+TMOD. . . . . . . . .  D ADDR   0089H   A   
+TR0 . . . . . . . . .  B ADDR   0088H.4 A   
+TR1 . . . . . . . . .  B ADDR   0088H.6 A   
+TRANSFERDIGITS. . . .  C ADDR   007DH   A   
+TRANSISTOR. . . . . .  C ADDR   030AH   A   
+TRANSISTOR0 . . . . .  C ADDR   0287H   A   
+TRANSISTOR1 . . . . .  C ADDR   028DH   A   
+TRANSISTOR2 . . . . .  C ADDR   0293H   A   
+TRANSISTOR3 . . . . .  C ADDR   0299H   A   
+TRANSISTOR4 . . . . .  C ADDR   029FH   A   
+TRANSISTOR5 . . . . .  C ADDR   02A5H   A   
+TRANSISTOR6 . . . . .  C ADDR   02ABH   A   
+TRANSISTOR7 . . . . .  C ADDR   02B1H   A   
+TRANSISTOR8 . . . . .  C ADDR   02B7H   A   
+TRANSISTOR9 . . . . .  C ADDR   02BDH   A   
+TRANSISTORSELECT. . .  C ADDR   027DH   A   
+UNITSROUTINE. . . . .  C ADDR   00CFH   A   
+UPDATESIGN. . . . . .  C ADDR   00BCH   A   
+ZEROSELIMINATION. . .  C ADDR   01BBH   A   
+
+
+REGISTER BANK(S) USED: 0 
+
+
+ASSEMBLY COMPLETE.  0 WARNING(S), 0 ERROR(S)
